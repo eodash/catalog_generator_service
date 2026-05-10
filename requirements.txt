@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+eodash_catalog
+requests
+GitPython
+pydantic-settings
+python-multipart
+PyYAML
+pytest

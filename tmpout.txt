@@ -1,0 +1,26 @@
+ have initialized the repository and implemented the Catalog Generator Service. This FastAPI-based service dynamically generates STAC catalog previews for GitHub Pull Requests using the eodash_catalog library.
+
+  Key Accomplishments:
+   - Project Structure: Initialized with .gitignore, README.md, GEMINI.md (project instructions), and DESIGN.md.
+   - FastAPI Implementation:
+     - Dynamic Routing: Supports a clean URL structure: /{owner}/{repo}/pull/{number}/{path:path}.
+     - GitHub Integration: Fetches PR metadata (head SHA and clone URL) using the GitHub API.
+     - On-the-fly Generation: Clones the PR branch, overrides the catalog endpoint in configuration files to point back to the service, and executes eodash_catalog build.
+   - Performance: Implements a disk-based cache keyed by the commit SHA to avoid redundant builds.
+   - Dockerized: Provided a Dockerfile that installs git and all Python dependencies, ready for deployment.
+   - Verification: Added unit tests in tests/test_logic.py to verify PR parsing and endpoint override logic.
+
+  API Usage
+  Instead of using complex query parameters, the service uses a path-based approach that ensures STAC link integrity:
+
+   * Entry Point: http://<service-url>/GTIF-Austria/public-catalog/pull/135/catalog.json
+   * Automatic Link Resolution: Any relative links generated in the STAC (e.g., collections/sentinel-2.json) will naturally resolve back to the service at
+     http://<service-url>/GTIF-Austria/public-catalog/pull/135/collections/sentinel-2.json.
+
+  Getting Started
+  To run the service locally:
+
+   1 docker build -t catalog-generator-service .
+   2 docker run -p 8000:8000 -e GITHUB_TOKEN=your_token catalog-generator-service
+
+  You can now point a STAC browser to http://localhost:8000/GTIF-Austria/public-catalog/pull/135/catalog.json to see the results.
