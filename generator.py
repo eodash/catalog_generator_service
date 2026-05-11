@@ -9,6 +9,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+class CatalogGenerationError(Exception):
+    def __init__(self, message: str, stderr: str):
+        super().__init__(message)
+        self.stderr = stderr
+
 class CatalogGenerator:
     def __init__(self, cache_dir: str):
         self.cache_dir = cache_dir
@@ -118,7 +123,7 @@ class CatalogGenerator:
                 f.write(sha)
         except subprocess.CalledProcessError as e:
             logger.error(f"Error running eodash_catalog: {e.stderr}")
-            raise Exception(f"Catalog generation failed: {e.stderr}")
+            raise CatalogGenerationError("Catalog generation failed", e.stderr)
 
         return build_path
 

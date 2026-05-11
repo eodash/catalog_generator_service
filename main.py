@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
 from github import GitHubClient
-from generator import CatalogGenerator
+from generator import CatalogGenerator, CatalogGenerationError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -93,6 +93,20 @@ def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Req
 
         return FileResponse(file_path)
 
+    except CatalogGenerationError as e:
+        logger.error("Catalog generation subprocess failed.")
+        # Parse the stderr to make it more readable in the JSON response
+        stderr_lines = [line for line in e.stderr.strip().split('\n') if line]
+        error_summary = stderr_lines[-1] if stderr_lines else "Unknown error occurred during catalog generation."
+        
+        raise HTTPException(
+            status_code=500, 
+            detail={
+                "message": "Catalog generation failed.",
+                "error_summary": error_summary,
+                "traceback": stderr_lines
+            }
+        )
     except Exception as e:
         logger.exception("Error processing request")
         raise HTTPException(status_code=500, detail=str(e))
