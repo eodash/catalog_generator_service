@@ -22,3 +22,23 @@ class GitHubClient:
             "sha": pr_info["head"]["sha"],
             "clone_url": pr_info["head"]["repo"]["clone_url"]
         }
+
+    def get_pr_files(self, owner: str, repo: str, pull_number: int) -> list[str]:
+        url = f"{self.base_url}/repos/{owner}/{repo}/pulls/{pull_number}/files"
+        headers = {}
+        if self.token:
+            headers["Authorization"] = f"token {self.token}"
+        
+        files = []
+        params = {"per_page": 100, "page": 1}
+        while True:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            page_files = response.json()
+            if not page_files:
+                break
+            files.extend([f["filename"] for f in page_files])
+            if "next" not in response.links:
+                break
+            params["page"] += 1
+        return files

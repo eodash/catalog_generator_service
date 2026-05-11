@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
 from github import GitHubClient
@@ -10,6 +11,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Catalog Generator Service")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 CACHE_DIR = os.getenv("CATALOG_CACHE_DIR", "/tmp/catalog_cache")
@@ -38,14 +48,30 @@ def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Req
         sha = head_info["sha"]
         clone_url = head_info["clone_url"]
 
+        # Fetch modified files in the PR
+        pr_files = github_client.get_pr_files(owner, repo, number)
+        
+        logger.info(f"PR #{number} changed {len(pr_files)} files: {pr_files}")
+
         # 2. Generate or retrieve the catalog from cache
         build_dir = generator.generate(
             clone_url=clone_url,
             owner=owner,
             repo=repo,
             sha=sha,
-            service_base_url=service_pr_url
+            pull_number=number,
+            service_base_url=service_pr_url,
+            pr_files=pr_files
         )
+
+        # eodash_catalog often outputs into a subdirectory named after the catalog ID.
+        # If build_dir contains exactly one subdirectory and no other files, we should use that subdirectory.
+        if os.path.exists(build_dir):
+            items = os.listdir(build_dir)
+            if len(items) == 1:
+                single_item_path = os.path.join(build_dir, items[0])
+                if os.path.isdir(single_item_path):
+                    build_dir = single_item_path
 
         # 3. Serve the requested file
         # If path is empty, default to catalog.json? 
