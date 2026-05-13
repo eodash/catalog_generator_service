@@ -27,6 +27,19 @@ CACHE_DIR = os.getenv("CATALOG_CACHE_DIR", "/tmp/catalog_cache")
 github_client = GitHubClient(token=GITHUB_TOKEN)
 generator = CatalogGenerator(cache_dir=CACHE_DIR)
 
+@app.on_event("startup")
+async def startup_event():
+    if GITHUB_TOKEN:
+        # Sanitize token for logging: show prefix, length, and last 4 chars
+        token_preview = f"{GITHUB_TOKEN[:10]}...{GITHUB_TOKEN[-4:]}" if len(GITHUB_TOKEN) > 15 else "***"
+        logger.info(f"Service started with GITHUB_TOKEN: {token_preview} (length: {len(GITHUB_TOKEN)})")
+    else:
+        logger.warning("Service started WITHOUT GITHUB_TOKEN. GitHub API rate limits will be low.")
+    
+    repo_secrets = os.getenv("REPO_SECRETS_JSON")
+    if repo_secrets:
+        logger.info(f"REPO_SECRETS_JSON is configured (length: {len(repo_secrets)})")
+
 @app.get("/{owner}/{repo}/pull/{number}/{path:path}")
 def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Request):
     """

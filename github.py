@@ -6,14 +6,21 @@ class GitHubClient:
         self.token = token
         self.base_url = "https://api.github.com"
 
-    def get_pr_info(self, owner: str, repo: str, pull_number: int) -> Dict[str, Any]:
-        url = f"{self.base_url}/repos/{owner}/{repo}/pulls/{pull_number}"
+    def _get_headers(self):
         headers = {}
         if self.token:
-            headers["Authorization"] = f"token {self.token}"
+            # Strip to ensure no accidental newlines from env vars, and use Bearer
+            headers["Authorization"] = f"Bearer {self.token.strip()}"
+        return headers
+
+    def get_pr_info(self, owner: str, repo: str, pull_number: int) -> Dict[str, Any]:
+        url = f"{self.base_url}/repos/{owner}/{repo}/pulls/{pull_number}"
         
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
+        response = requests.get(url, headers=self._get_headers())
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            raise Exception(f"GitHub API Error for {url}: {response.status_code} - {response.text}") from e
         return response.json()
 
     def get_head_info(self, pr_info: Dict[str, Any]) -> Dict[str, str]:
@@ -25,15 +32,16 @@ class GitHubClient:
 
     def get_pr_files(self, owner: str, repo: str, pull_number: int) -> list[str]:
         url = f"{self.base_url}/repos/{owner}/{repo}/pulls/{pull_number}/files"
-        headers = {}
-        if self.token:
-            headers["Authorization"] = f"token {self.token}"
+        headers = self._get_headers()
         
         files = []
         params = {"per_page": 100, "page": 1}
         while True:
             response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                raise Exception(f"GitHub API Error for {url}: {response.status_code} - {response.text}") from e
             page_files = response.json()
             if not page_files:
                 break
