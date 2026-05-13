@@ -118,11 +118,29 @@ class CatalogGenerator:
         logger.info(f"Generating catalog for specific collections/indicators: {modified_names}")
         
         cmd = ["eodash_catalog", "--outputpath", "build"] + modified_names
+        
+        # Ensure environment variables (like SH_INSTANCE_ID, SH_CLIENT_SECRET) are passed to the subprocess
+        env = os.environ.copy()
+        
+        # Load repo-specific secrets if defined in REPO_SECRETS_JSON mapping
+        repo_secrets_json = os.getenv("REPO_SECRETS_JSON")
+        if repo_secrets_json:
+            try:
+                secrets_map = json.loads(repo_secrets_json)
+                repo_full_name = f"{owner}/{repo}"
+                repo_secrets = secrets_map.get(repo_full_name, {})
+                if repo_secrets:
+                    logger.info(f"Adding repo-specific secrets for {repo_full_name}: {list(repo_secrets.keys())}")
+                    env.update(repo_secrets)
+            except json.JSONDecodeError:
+                logger.error("Failed to parse REPO_SECRETS_JSON environment variable. Ensure it is a valid JSON string.")
+
         logger.info(f"Running command: {' '.join(cmd)} in {workspace_path}...")
         try:
             subprocess.run(
                 cmd,
                 cwd=workspace_path,
+                env=env,
                 check=True,
                 capture_output=True,
                 text=True

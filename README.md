@@ -19,11 +19,31 @@ This service mocks a STAC endpoint. When requested with a GitHub PR URL, it:
 The service can be configured using environment variables:
 - `GITHUB_TOKEN`: (Optional) GitHub Personal Access Token for higher rate limits.
 - `CATALOG_CACHE_DIR`: Directory where repositories and generated catalogs are cached (default: `/tmp/catalog_cache`).
+- `REPO_SECRETS_JSON`: (Optional) A JSON string mapping repository names to specific secrets. This is useful when different repositories require different secrets for the same key, or when various APIs are used (e.g., Sentinel Hub, Mapbox, AWS).
+  ```json
+  {
+    "GTIF-Austria/public-catalog": {
+      "SH_INSTANCE_ID": "instance-1",
+      "SH_CLIENT_ID": "client-1",
+      "SH_CLIENT_SECRET": "secret-1"
+    },
+    "other-org/other-repo": {
+      "MAPBOX_TOKEN": "pk.ey...",
+      "AWS_ACCESS_KEY_ID": "AKIA..."
+    }
+  }
+  ```
+- **Global Secrets**: Any other environment variables set on the service will act as defaults for all repositories.
 
 ### Running with Docker
 ```bash
 docker build -t catalog-generator-service .
-docker run -p 8000:8000 catalog-generator-service
+
+# Run the container with global secrets and/or repo-specific mapping:
+docker run -p 8000:8000 \
+  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+  -e REPO_SECRETS_JSON='{"GTIF-Austria/public-catalog": {"SH_INSTANCE_ID": "..."}}' \
+  catalog-generator-service
 ```
 
 ### Local Development
