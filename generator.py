@@ -117,7 +117,8 @@ class CatalogGenerator:
         # Run eodash_catalog
         logger.info(f"Generating catalog for specific collections/indicators: {modified_names}")
         
-        cmd = ["eodash_catalog", "--outputpath", "build"] + modified_names
+        # Add -gp flag to generate Parquet files for better performance with large collections
+        cmd = ["eodash_catalog", "--outputpath", "build", "-gp"] + modified_names
         
         # Ensure environment variables (like SH_INSTANCE_ID, SH_CLIENT_SECRET) are passed to the subprocess
         env = os.environ.copy()

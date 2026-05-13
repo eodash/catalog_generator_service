@@ -104,6 +104,10 @@ def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Req
             logger.error(f"File not found: {file_path}")
             raise HTTPException(status_code=404, detail=f"File {path} not found in generated catalog")
 
+        # Set the correct MIME type for Parquet files
+        if file_path.endswith(".parquet"):
+            return FileResponse(file_path, media_type="application/vnd.apache.parquet")
+            
         return FileResponse(file_path)
 
     except CatalogGenerationError as e:
