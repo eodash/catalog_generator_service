@@ -35,7 +35,7 @@ def test_override_endpoints_logic(tmp_path):
         json.dump(original_data, f)
     
     generator = CatalogGenerator(cache_dir=str(tmp_path / "cache"))
-    generator._override_endpoints(str(tmp_path), "http://service.com/")
+    generator._update_catalogs_config(str(tmp_path), "http://service.com/", [])
     
     with open(catalog_file, 'r') as f:
         updated_data = json.load(f)

@@ -105,8 +105,17 @@ class CatalogGenerator:
         # Modify catalog configurations to override endpoint and inject new names
         self._update_catalogs_config(workspace_path, service_base_url, names_to_add)
 
+        # If no relevant changes are detected, generate an empty catalog instead of a full build
+        if not modified_names:
+            logger.info("No relevant changes detected. Generating an empty catalog.")
+            self._generate_empty_catalog(workspace_path, build_path, service_base_url)
+            # Write the SHA to mark successful generation
+            with open(sha_file, "w") as f:
+                f.write(sha)
+            return build_path
+
         # Run eodash_catalog
-        logger.info(f"Generating catalog for specific collections/indicators: {modified_names if modified_names else 'ALL'}")
+        logger.info(f"Generating catalog for specific collections/indicators: {modified_names}")
         
         cmd = ["eodash_catalog", "--outputpath", "build"] + modified_names
         logger.info(f"Running command: {' '.join(cmd)} in {workspace_path}...")
@@ -126,6 +135,65 @@ class CatalogGenerator:
             raise CatalogGenerationError("Catalog generation failed", e.stderr)
 
         return build_path
+
+    def _generate_empty_catalog(self, workspace_path: str, build_path: str, service_base_url: str):
+        """
+        Generates a minimal STAC catalog when no collections or indicators are modified.
+        """
+        if not os.path.exists(build_path):
+            os.makedirs(build_path)
+        
+        # Default info
+        catalog_info = {
+            "stac_version": "1.0.0",
+            "type": "Catalog",
+            "id": "empty-catalog",
+            "title": "Empty Catalog",
+            "description": "This catalog is empty because no changes were detected in the PR.",
+            "links": []
+        }
+        
+        # Try to find some info from existing catalog configurations in the repo
+        catalogs_dir = os.path.join(workspace_path, "catalogs")
+        if os.path.exists(catalogs_dir):
+            for filename in os.listdir(catalogs_dir):
+                if filename.endswith(".json") or filename.endswith(".yaml") or filename.endswith(".yml"):
+                    file_path = os.path.join(catalogs_dir, filename)
+                    try:
+                        with open(file_path, 'r') as f:
+                            if filename.endswith(".json"):
+                                data = json.load(f)
+                            else:
+                                data = yaml.safe_load(f)
+                        if isinstance(data, dict):
+                            if "id" in data: catalog_info["id"] = data["id"]
+                            if "title" in data: catalog_info["title"] = data["title"]
+                            if "description" in data: catalog_info["description"] = data["description"]
+                            # Use the first valid one we find
+                            break
+                    except Exception as e:
+                        logger.warning(f"Failed to read catalog config {filename}: {e}")
+
+        # Ensure links are correct
+        # service_base_url should already end with / as ensured in main.py
+        catalog_url = f"{service_base_url}catalog.json"
+        catalog_info["links"] = [
+            {
+                "rel": "self",
+                "href": catalog_url,
+                "type": "application/json"
+            },
+            {
+                "rel": "root",
+                "href": catalog_url,
+                "type": "application/json"
+            }
+        ]
+        
+        output_file = os.path.join(build_path, "catalog.json")
+        with open(output_file, 'w') as f:
+            json.dump(catalog_info, f, indent=2)
+        logger.info(f"Generated empty catalog at {output_file}")
 
     def _update_catalogs_config(self, workspace_path: str, service_base_url: str, names_to_add: list[str]):
         catalogs_dir = os.path.join(workspace_path, "catalogs")

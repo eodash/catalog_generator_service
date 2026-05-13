@@ -61,3 +61,19 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 The service will be available at `http://127.0.0.1:8000`. You can access the API documentation at `http://127.0.0.1:8000/docs`.
+
+### Testing
+
+The project uses `pytest` for unit testing. The test files are located in the `tests/` directory.
+
+To run the tests, ensure you have your virtual environment activated and the dependencies installed, then run:
+
+```bash
+pytest
+```
+
+If you encounter an issue where `pytest` is not found, you can run it as a Python module:
+
+```bash
+python3 -m pytest
+```
