@@ -9,6 +9,21 @@ This service mocks a STAC endpoint. When requested with a GitHub PR URL, it:
 2. Uses `eodash_catalog` to generate the STAC JSON responses on the fly.
 3. Serves these responses to allow instant previewing in a STAC browser.
 
+## Dependency Management
+
+This project uses `pip-tools` for deterministic dependency management.
+
+* **`requirements.in`**: Contains our top-level dependencies (edit this file).
+* **`requirements.txt`**: The auto-generated lockfile containing exact versions of all packages and sub-dependencies (**do not edit manually**).
+
+### How to Add, Upgrade, or Pin a Package
+
+1. **Modify the source file:**
+   Open `requirements.in` and add or update your package, including any specific version pins if necessary.
+   ```text
+   # Example: Pinning a specific version
+   eodash_catalog==0.4.6
+
 ## Getting Started
 
 ### Prerequisites

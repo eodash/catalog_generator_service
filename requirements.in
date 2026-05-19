@@ -1,0 +1,10 @@
+eodash_catalog==0.4.6
+fastapi
+uvicorn
+requests
+GitPython
+pydantic-settings
+python-multipart
+PyYAML
+pytest
+pytz
