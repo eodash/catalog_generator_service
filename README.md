@@ -23,6 +23,20 @@ This project uses `pip-tools` for deterministic dependency management.
    ```text
    # Example: Pinning a specific version
    eodash_catalog==0.4.6
+   ```
+
+2. **Compile the updated lockfile:**
+   ```text
+   pip-compile requirements.in
+   ```
+3. **Install the changes locally:**
+   Sync your active virtual environment so it matches the newly generated lockfile.
+   ```text
+   pip install -r requirements.txt
+   ```
+4. **Commit both files:**
+
+   Always commit both the `.in` and `.txt` files to version control so the environment remains fully reproducible for everyone.
 
 ## Getting Started
 
