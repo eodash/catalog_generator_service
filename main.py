@@ -10,7 +10,12 @@ from generator import CatalogGenerator, CatalogGenerationError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Catalog Generator Service")
+__version__ = "0.1.1"
+
+app = FastAPI(
+    title="Catalog Generator Service",
+    version=__version__
+)
 
 # Add CORS middleware
 app.add_middleware(
