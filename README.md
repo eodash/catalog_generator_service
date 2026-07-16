@@ -111,6 +111,14 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 
 The service will be available at `http://127.0.0.1:8000`. You can access the API documentation at `http://127.0.0.1:8000/docs`.
 
+### Refresh Cache
+
+If the data behind a configuration changes and you need to re-generate the catalog without creating a new commit, you can use the optional `refresh` parameter in your request:
+
+`/{owner}/{repo}/pull/{number}/catalog.json?refresh=true`
+
+This will bypass the internal cache and force the service to re-run `eodash_catalog` for the specified PR.
+
 ### Testing
 
 The project uses `pytest` for unit testing. The test files are located in the `tests/` directory.

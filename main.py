@@ -10,7 +10,7 @@ from generator import CatalogGenerator, CatalogGenerationError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 app = FastAPI(
     title="Catalog Generator Service",
@@ -46,9 +46,10 @@ async def startup_event():
         logger.info(f"REPO_SECRETS_JSON is configured (length: {len(repo_secrets)})")
 
 @app.get("/{owner}/{repo}/pull/{number}/{path:path}")
-def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Request):
+def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Request, refresh: bool = False):
     """
     Dynamically generates and serves STAC catalog files for a specific GitHub Pull Request.
+    Add `?refresh=true` to force re-generation of the catalog.
     """
     # Determine the service base URL for this PR to ensure STAC links are correct
     base_url = str(request.base_url)
@@ -57,7 +58,7 @@ def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Req
         base_url += "/"
     service_pr_url = f"{base_url}{owner}/{repo}/pull/{number}/"
 
-    logger.info(f"Request for {path} in {owner}/{repo} PR #{number}")
+    logger.info(f"Request for {path} in {owner}/{repo} PR #{number} (refresh={refresh})")
 
     try:
         # 1. Fetch PR information from GitHub
@@ -79,7 +80,8 @@ def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Req
             sha=sha,
             pull_number=number,
             service_base_url=service_pr_url,
-            pr_files=pr_files
+            pr_files=pr_files,
+            force_refresh=refresh
         )
 
         # eodash_catalog often outputs into a subdirectory named after the catalog ID.

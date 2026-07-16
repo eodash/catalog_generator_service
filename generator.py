@@ -33,13 +33,13 @@ class CatalogGenerator:
     def get_workspace_path(self, owner: str, repo: str, pull_number: int) -> str:
         return os.path.join(self.cache_dir, f"{owner}_{repo}_pr{pull_number}")
 
-    def generate(self, clone_url: str, owner: str, repo: str, sha: str, pull_number: int, service_base_url: str, pr_files: list[str] = None) -> str:
+    def generate(self, clone_url: str, owner: str, repo: str, sha: str, pull_number: int, service_base_url: str, pr_files: list[str] = None, force_refresh: bool = False) -> str:
         workspace_path = self.get_workspace_path(owner, repo, pull_number)
         build_path = os.path.join(workspace_path, "build")
         sha_file = os.path.join(workspace_path, ".generated_sha")
 
-        # Check if we already have the correct SHA generated
-        if os.path.exists(build_path) and os.path.exists(sha_file):
+        # Check if we already have the correct SHA generated (and not forced refresh)
+        if not force_refresh and os.path.exists(build_path) and os.path.exists(sha_file):
             with open(sha_file, "r") as f:
                 cached_sha = f.read().strip()
             if cached_sha == sha:
@@ -48,17 +48,21 @@ class CatalogGenerator:
 
         # Acquire lock for this specific PR to avoid concurrent builds
         with self._get_lock(owner, repo, pull_number):
-            # Re-check cache after acquiring lock
-            if os.path.exists(build_path) and os.path.exists(sha_file):
+            # Re-check cache after acquiring lock (and not forced refresh)
+            if not force_refresh and os.path.exists(build_path) and os.path.exists(sha_file):
                 with open(sha_file, "r") as f:
                     cached_sha = f.read().strip()
                 if cached_sha == sha:
                     logger.info(f"Using cached build for PR {pull_number} (SHA: {sha})")
                     return build_path
 
-            # If it exists but is old/invalid, clean it up
+            # If it exists but is old/invalid/refresh-forced, clean it up
             if os.path.exists(workspace_path):
-                logger.info(f"Removing outdated build files in {workspace_path}...")
+                if force_refresh:
+                    logger.info(f"Force-refresh requested for PR {pull_number}...")
+                else:
+                    logger.info(f"Removing outdated build files in {workspace_path}...")
+                
                 if os.path.exists(build_path):
                     shutil.rmtree(build_path)
                 if os.path.exists(sha_file):
