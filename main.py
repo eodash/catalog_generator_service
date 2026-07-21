@@ -10,7 +10,7 @@ from generator import CatalogGenerator, CatalogGenerationError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 app = FastAPI(
     title="Catalog Generator Service",
