@@ -1,4 +1,4 @@
-eodash_catalog==0.5.0
+eodash_catalog==0.5.2
 fastapi
 uvicorn
 requests
