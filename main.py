@@ -10,12 +10,9 @@ from generator import CatalogGenerator, CatalogGenerationError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 
-app = FastAPI(
-    title="Catalog Generator Service",
-    version=__version__
-)
+app = FastAPI(title="Catalog Generator Service", version=__version__)
 
 # Add CORS middleware
 app.add_middleware(
@@ -32,21 +29,38 @@ CACHE_DIR = os.getenv("CATALOG_CACHE_DIR", "/tmp/catalog_cache")
 github_client = GitHubClient(token=GITHUB_TOKEN)
 generator = CatalogGenerator(cache_dir=CACHE_DIR)
 
+
 @app.on_event("startup")
 async def startup_event():
     if GITHUB_TOKEN:
         # Sanitize token for logging: show prefix, length, and last 4 chars
-        token_preview = f"{GITHUB_TOKEN[:10]}...{GITHUB_TOKEN[-4:]}" if len(GITHUB_TOKEN) > 15 else "***"
-        logger.info(f"Service started with GITHUB_TOKEN: {token_preview} (length: {len(GITHUB_TOKEN)})")
+        token_preview = (
+            f"{GITHUB_TOKEN[:10]}...{GITHUB_TOKEN[-4:]}"
+            if len(GITHUB_TOKEN) > 15
+            else "***"
+        )
+        logger.info(
+            f"Service started with GITHUB_TOKEN: {token_preview} (length: {len(GITHUB_TOKEN)})"
+        )
     else:
-        logger.warning("Service started WITHOUT GITHUB_TOKEN. GitHub API rate limits will be low.")
-    
+        logger.warning(
+            "Service started WITHOUT GITHUB_TOKEN. GitHub API rate limits will be low."
+        )
+
     repo_secrets = os.getenv("REPO_SECRETS_JSON")
     if repo_secrets:
         logger.info(f"REPO_SECRETS_JSON is configured (length: {len(repo_secrets)})")
 
+
 @app.get("/{owner}/{repo}/pull/{number}/{path:path}")
-def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Request, refresh: bool = False):
+def get_catalog_file(
+    owner: str,
+    repo: str,
+    number: int,
+    path: str,
+    request: Request,
+    refresh: bool = False,
+):
     """
     Dynamically generates and serves STAC catalog files for a specific GitHub Pull Request.
     Add `?refresh=true` to force re-generation of the catalog.
@@ -58,7 +72,9 @@ def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Req
         base_url += "/"
     service_pr_url = f"{base_url}{owner}/{repo}/pull/{number}/"
 
-    logger.info(f"Request for {path} in {owner}/{repo} PR #{number} (refresh={refresh})")
+    logger.info(
+        f"Request for {path} in {owner}/{repo} PR #{number} (refresh={refresh})"
+    )
 
     try:
         # 1. Fetch PR information from GitHub
@@ -69,7 +85,7 @@ def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Req
 
         # Fetch modified files in the PR
         pr_files = github_client.get_pr_files(owner, repo, number)
-        
+
         logger.info(f"PR #{number} changed {len(pr_files)} files: {pr_files}")
 
         # 2. Generate or retrieve the catalog from cache
@@ -81,7 +97,7 @@ def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Req
             pull_number=number,
             service_base_url=service_pr_url,
             pr_files=pr_files,
-            force_refresh=refresh
+            force_refresh=refresh,
         )
 
         # eodash_catalog often outputs into a subdirectory named after the catalog ID.
@@ -94,55 +110,68 @@ def get_catalog_file(owner: str, repo: str, number: int, path: str, request: Req
                     build_dir = single_item_path
 
         # 3. Serve the requested file
-        # If path is empty, default to catalog.json? 
+        # If path is empty, default to catalog.json?
         # Actually path is required by the route.
-        
+
         file_path = os.path.join(build_dir, path)
-        
-        # Special case: if catalog.json is requested but not found, 
+
+        # Special case: if catalog.json is requested but not found,
         # look for any .json file in the build root.
         if path == "catalog.json" and not os.path.exists(file_path):
-            json_files = [f for f in os.listdir(build_dir) if f.endswith(".json") and os.path.isfile(os.path.join(build_dir, f))]
+            json_files = [
+                f
+                for f in os.listdir(build_dir)
+                if f.endswith(".json") and os.path.isfile(os.path.join(build_dir, f))
+            ]
             if json_files:
                 file_path = os.path.join(build_dir, json_files[0])
                 logger.info(f"catalog.json not found, falling back to {json_files[0]}")
 
         if not os.path.exists(file_path):
             logger.error(f"File not found: {file_path}")
-            raise HTTPException(status_code=404, detail=f"File {path} not found in generated catalog")
+            raise HTTPException(
+                status_code=404, detail=f"File {path} not found in generated catalog"
+            )
 
         # Set the correct MIME type for Parquet files
         if file_path.endswith(".parquet"):
             return FileResponse(file_path, media_type="application/vnd.apache.parquet")
-            
+
         return FileResponse(file_path)
 
     except CatalogGenerationError as e:
         logger.error("Catalog generation subprocess failed.")
         # Parse the stderr to make it more readable in the JSON response
-        stderr_lines = [line for line in e.stderr.strip().split('\n') if line]
-        error_summary = stderr_lines[-1] if stderr_lines else "Unknown error occurred during catalog generation."
-        
+        stderr_lines = [line for line in e.stderr.strip().split("\n") if line]
+        error_summary = (
+            stderr_lines[-1]
+            if stderr_lines
+            else "Unknown error occurred during catalog generation."
+        )
+
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail={
                 "message": "Catalog generation failed.",
                 "error_summary": error_summary,
-                "traceback": stderr_lines
-            }
+                "traceback": stderr_lines,
+            },
         )
     except Exception as e:
         logger.exception("Error processing request")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/")
 def read_root():
     return {
         "message": "Catalog Generator Service is running.",
         "usage": "/{owner}/{repo}/pull/{number}/catalog.json",
-        "example": "/GTIF-Austria/public-catalog/pull/135/catalog.json"
+        "example": "/GTIF-Austria/public-catalog/pull/135/catalog.json",
     }
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
