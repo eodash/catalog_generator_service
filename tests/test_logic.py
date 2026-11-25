@@ -143,4 +143,39 @@ def test_resolve_modified_names_catalog_change(tmp_path):
     assert set(modified_names) == {"coll_1", "coll_2"}
     assert set(names_to_add) == {"coll_1", "coll_2"}
 
+def test_check_eodash_catalog_errors(tmp_path):
+    from generator import CatalogGenerator, CatalogGenerationError
+    import json
+
+    generator = CatalogGenerator(cache_dir=str(tmp_path / "cache"))
+    
+    # Case 1: Error in stderr logs
+    stderr_with_error = "2026-11-25 [error] Error processing indicator my_ind: 'Type'"
+    with pytest.raises(CatalogGenerationError) if pytest else pytest_raises(CatalogGenerationError):
+        generator._check_eodash_catalog_errors(str(tmp_path), ["my_ind"], "", stderr_with_error)
+
+    # Case 2: No catalog.json generated
+    with pytest.raises(CatalogGenerationError) if pytest else pytest_raises(CatalogGenerationError):
+        generator._check_eodash_catalog_errors(str(tmp_path / "non_existent"), ["my_ind"], "", "")
+
+    # Case 3: Empty catalog with no child links when modified_names requested
+    build_dir = tmp_path / "build" / "cat_id"
+    build_dir.mkdir(parents=True)
+    catalog_file = build_dir / "catalog.json"
+    with open(catalog_file, "w") as f:
+        json.dump({"type": "Catalog", "links": [{"rel": "root", "href": "./catalog.json"}]}, f)
+
+    with pytest.raises(CatalogGenerationError) if pytest else pytest_raises(CatalogGenerationError):
+        generator._check_eodash_catalog_errors(str(tmp_path / "build"), ["my_ind"], "", "")
+
+def pytest_raises(exception_cls):
+    class ContextManager:
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if exc_type is None or not issubclass(exc_type, exception_cls):
+                raise AssertionError(f"Expected {exception_cls.__name__} but got {exc_type}")
+            return True
+    return ContextManager()
+
 

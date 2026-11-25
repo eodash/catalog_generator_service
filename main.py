@@ -140,7 +140,7 @@ def get_catalog_file(
         return FileResponse(file_path)
 
     except CatalogGenerationError as e:
-        logger.error("Catalog generation subprocess failed.")
+        logger.error("Catalog generation subprocess failed due to configuration or creation errors.")
         # Parse the stderr to make it more readable in the JSON response
         stderr_lines = [line for line in e.stderr.strip().split("\n") if line]
         error_summary = (
@@ -150,9 +150,9 @@ def get_catalog_file(
         )
 
         raise HTTPException(
-            status_code=500,
+            status_code=422,
             detail={
-                "message": "Catalog generation failed.",
+                "message": "Catalog configuration or generation error.",
                 "error_summary": error_summary,
                 "traceback": stderr_lines,
             },

@@ -227,7 +227,7 @@ class CatalogGenerator:
 
             logger.info(f"Running command: {' '.join(cmd)} in {workspace_path}...")
             try:
-                subprocess.run(
+                res = subprocess.run(
                     cmd,
                     cwd=workspace_path,
                     env=env,
@@ -235,7 +235,11 @@ class CatalogGenerator:
                     capture_output=True,
                     text=True
                 )
-                # Write the SHA to mark successful generation
+                
+                # Perform strict validation on eodash_catalog output and logs
+                self._check_eodash_catalog_errors(build_path, modified_names, res.stdout, res.stderr)
+
+                # Write the SHA to mark successful generation only if check passed
                 with open(sha_file, "w") as f:
                     f.write(sha)
             except subprocess.CalledProcessError as e:
@@ -243,6 +247,70 @@ class CatalogGenerator:
                 raise CatalogGenerationError("Catalog generation failed", e.stderr)
 
             return build_path
+
+    def _check_eodash_catalog_errors(self, build_path: str, modified_names: list[str], stdout: str, stderr: str):
+        """
+        Inspects eodash_catalog output logs and build directory to detect errors.
+        If an error occurred during catalog generation, raises CatalogGenerationError.
+        """
+        combined_output = (stdout or "") + "\n" + (stderr or "")
+        
+        # 1. Search for error indicators in stdout/stderr
+        error_keywords = [
+            "Error processing indicator",
+            "Error processing collection",
+            "Error processing",
+            "[error",
+            "level='error'",
+            "level=\"error\"",
+            "Traceback (most recent call last):",
+        ]
+        
+        found_error_lines = []
+        for line in combined_output.splitlines():
+            if any(keyword in line for keyword in error_keywords):
+                found_error_lines.append(line.strip())
+
+        if found_error_lines:
+            error_details = "\n".join(found_error_lines)
+            logger.error(f"Detected eodash_catalog error: {error_details}")
+            raise CatalogGenerationError("Catalog generation failed due to catalog creation errors.", combined_output)
+
+        # 2. Check if requested items were actually generated in build_path
+        catalog_root = build_path
+        if os.path.exists(build_path):
+            subdirs = [os.path.join(build_path, d) for d in os.listdir(build_path) if os.path.isdir(os.path.join(build_path, d))]
+            if len(subdirs) == 1:
+                catalog_root = subdirs[0]
+
+        root_catalog_file = os.path.join(catalog_root, "catalog.json")
+        if not os.path.exists(root_catalog_file):
+            raise CatalogGenerationError("Catalog generation failed: catalog.json was not created.", combined_output)
+
+        # Verify that catalog.json contains links for requested modified_names if modified_names was non-empty
+        if modified_names:
+            try:
+                with open(root_catalog_file, 'r') as fh:
+                    cat_data = json.load(fh)
+                links = cat_data.get("links", [])
+                child_hrefs = [l.get("href", "") for l in links if l.get("rel") in ["child", "item"]]
+                
+                matched = False
+                for name in modified_names:
+                    if any(name in href for href in child_hrefs):
+                        matched = True
+                        break
+                
+                if not matched and child_hrefs == []:
+                    logger.error(f"Generated catalog at {root_catalog_file} contains no child links for {modified_names}")
+                    raise CatalogGenerationError(
+                        f"Catalog generation failed: no child items created for requested items {modified_names}.",
+                        combined_output
+                    )
+            except CatalogGenerationError:
+                raise
+            except Exception as e:
+                logger.warning(f"Failed to inspect generated catalog.json for verification: {e}")
 
     def _generate_empty_catalog(self, workspace_path: str, build_path: str, service_base_url: str):
         """
