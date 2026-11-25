@@ -69,11 +69,8 @@ def test_resolve_modified_names_indicator_change(tmp_path):
     pr_files = ["indicators/my_indicator.json"]
 
     modified_names, names_to_add = generator.resolve_modified_names(str(tmp_path), pr_files)
-    assert "my_indicator" in modified_names
-    assert "child_coll_1" in modified_names
-    assert "child_coll_2" in modified_names
-    assert "my_indicator" in names_to_add
-    assert "child_coll_1" in names_to_add
+    assert set(modified_names) == {"my_indicator"}
+    assert set(names_to_add) == {"my_indicator"}
 
 def test_resolve_modified_names_collection_change_reverse_lookup(tmp_path):
     from generator import CatalogGenerator
@@ -100,10 +97,30 @@ def test_resolve_modified_names_collection_change_reverse_lookup(tmp_path):
     pr_files = ["collections/sub_coll_a.json"]
 
     modified_names, names_to_add = generator.resolve_modified_names(str(tmp_path), pr_files)
-    assert "sub_coll_a" in modified_names
-    assert "parent_indicator" in modified_names
-    assert "sub_coll_a" in names_to_add
-    assert "parent_indicator" in names_to_add
+    # sub_coll_a is part of parent_indicator and not in catalog config, so map to parent_indicator
+    assert set(modified_names) == {"parent_indicator"}
+    assert set(names_to_add) == {"parent_indicator"}
+
+def test_resolve_modified_names_collection_change_explicit_in_catalog(tmp_path):
+    from generator import CatalogGenerator
+    import json
+
+    catalogs_dir = tmp_path / "catalogs"
+    catalogs_dir.mkdir()
+    with open(catalogs_dir / "cat.json", 'w') as f:
+        json.dump({"id": "cat", "collections": ["explicit_coll"]}, f)
+
+    collections_dir = tmp_path / "collections"
+    collections_dir.mkdir()
+    with open(collections_dir / "explicit_coll.json", 'w') as f:
+        json.dump({"Name": "explicit_coll"}, f)
+
+    generator = CatalogGenerator(cache_dir=str(tmp_path / "cache"))
+    pr_files = ["collections/explicit_coll.json"]
+
+    modified_names, names_to_add = generator.resolve_modified_names(str(tmp_path), pr_files)
+    assert set(modified_names) == {"explicit_coll"}
+    assert set(names_to_add) == {"explicit_coll"}
 
 def test_resolve_modified_names_catalog_change(tmp_path):
     from generator import CatalogGenerator
@@ -123,9 +140,7 @@ def test_resolve_modified_names_catalog_change(tmp_path):
     pr_files = ["catalogs/main_cat.json"]
 
     modified_names, names_to_add = generator.resolve_modified_names(str(tmp_path), pr_files)
-    assert "coll_1" in modified_names
-    assert "coll_2" in modified_names
-    assert "coll_1" in names_to_add
-    assert "coll_2" in names_to_add
+    assert set(modified_names) == {"coll_1", "coll_2"}
+    assert set(names_to_add) == {"coll_1", "coll_2"}
 
 

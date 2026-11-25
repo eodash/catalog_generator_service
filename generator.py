@@ -37,6 +37,19 @@ class CatalogGenerator:
         """
         Determines the list of collection/indicator names to generate (modified_names)
         and names to inject into catalog configs (names_to_add) based on PR file changes.
+
+        Rules:
+        1. If an indicator file is modified:
+           - Include only the indicator name (do NOT include its child collections unless
+             a child collection is explicitly listed in existing catalog configs).
+        2. If a collection file is modified:
+           - Check if the collection is explicitly listed in any existing catalog config.
+             If so, treat it as a standalone collection.
+           - Otherwise, check if it belongs to any indicator(s).
+             If it belongs to an indicator, include the parent indicator name(s) instead.
+           - If it doesn't belong to any indicator, include the collection name.
+        3. If a catalog configuration file is modified:
+           - Include all collections listed in that catalog config.
         """
         pr_files = pr_files or []
         existing_pr_files = [f for f in pr_files if os.path.exists(os.path.join(workspace_path, f))]
@@ -45,77 +58,73 @@ class CatalogGenerator:
         indicator_files = [f for f in existing_pr_files if f.startswith("indicators/")]
         catalog_files = [f for f in existing_pr_files if f.startswith("catalogs/")]
 
+        # Read existing catalog configuration files to know which collections/indicators are pre-defined
+        catalog_defined_collections = set()
+        catalogs_dir = os.path.join(workspace_path, "catalogs")
+        if os.path.exists(catalogs_dir):
+            for cat_filename in os.listdir(catalogs_dir):
+                if cat_filename.endswith((".json", ".yaml", ".yml")):
+                    cat_path = os.path.join(catalogs_dir, cat_filename)
+                    try:
+                        with open(cat_path, 'r') as fh:
+                            if cat_filename.endswith('.json'):
+                                cat_data = json.load(fh)
+                            else:
+                                cat_data = yaml.safe_load(fh)
+                        if isinstance(cat_data, dict) and "collections" in cat_data:
+                            for c in cat_data["collections"]:
+                                catalog_defined_collections.add(c)
+                    except Exception as e:
+                        logger.warning(f"Failed to read catalog config {cat_filename}: {e}")
+
+        # Map each collection to parent indicator(s) by scanning indicators directory
+        collection_to_indicators = {}
+        indicators_dir = os.path.join(workspace_path, "indicators")
+        if os.path.exists(indicators_dir):
+            for ind_filename in os.listdir(indicators_dir):
+                if ind_filename.endswith((".json", ".yaml", ".yml")):
+                    ind_path = os.path.join(indicators_dir, ind_filename)
+                    ind_name = os.path.splitext(ind_filename)[0]
+                    try:
+                        with open(ind_path, 'r') as fh:
+                            if ind_filename.endswith('.json'):
+                                ind_data = json.load(fh)
+                            else:
+                                ind_data = yaml.safe_load(fh)
+                        if isinstance(ind_data, dict) and "Collections" in ind_data:
+                            for child_coll in ind_data["Collections"]:
+                                collection_to_indicators.setdefault(child_coll, set()).add(ind_name)
+                    except Exception as e:
+                        logger.warning(f"Failed to read indicator file {ind_filename}: {e}")
+
         modified_names_set = set()
         names_to_add_set = set()
 
-        # 1. Process modified indicator files
+        # Rule 1: Process modified indicator files
         for f in indicator_files:
-            name, ext = os.path.splitext(os.path.basename(f))
-            modified_names_set.add(name)
-            names_to_add_set.add(name)
+            ind_name = os.path.splitext(os.path.basename(f))[0]
+            modified_names_set.add(ind_name)
+            names_to_add_set.add(ind_name)
 
-            file_path = os.path.join(workspace_path, f)
-            try:
-                with open(file_path, 'r') as fh:
-                    if ext.lower() == '.json':
-                        data = json.load(fh)
-                    else:
-                        data = yaml.safe_load(fh)
-                if isinstance(data, dict) and "Collections" in data:
-                    for c in data["Collections"]:
-                        modified_names_set.add(c)
-                        names_to_add_set.add(c)
-            except Exception as e:
-                logger.warning(f"Failed to read indicator file {f}: {e}")
-
-        # 2. Process modified collection files
-        modified_collections = set()
+        # Rule 2: Process modified collection files
         for f in collections_files:
-            name = os.path.splitext(os.path.basename(f))[0]
-            modified_names_set.add(name)
-            names_to_add_set.add(name)
-            modified_collections.add(name)
+            coll_name = os.path.splitext(os.path.basename(f))[0]
+            if coll_name in catalog_defined_collections:
+                modified_names_set.add(coll_name)
+                names_to_add_set.add(coll_name)
+            elif coll_name in collection_to_indicators:
+                for parent_ind in collection_to_indicators[coll_name]:
+                    modified_names_set.add(parent_ind)
+                    names_to_add_set.add(parent_ind)
+            else:
+                modified_names_set.add(coll_name)
+                names_to_add_set.add(coll_name)
 
-        # Reverse lookup: if collection files were modified, scan all indicators to find parent indicators
-        if modified_collections:
-            indicators_dir = os.path.join(workspace_path, "indicators")
-            if os.path.exists(indicators_dir):
-                for ind_filename in os.listdir(indicators_dir):
-                    if ind_filename.endswith((".json", ".yaml", ".yml")):
-                        ind_path = os.path.join(indicators_dir, ind_filename)
-                        try:
-                            with open(ind_path, 'r') as fh:
-                                if ind_filename.endswith('.json'):
-                                    ind_data = json.load(fh)
-                                else:
-                                    ind_data = yaml.safe_load(fh)
-                            if isinstance(ind_data, dict) and "Collections" in ind_data:
-                                if any(c in modified_collections for c in ind_data["Collections"]):
-                                    ind_name = os.path.splitext(ind_filename)[0]
-                                    modified_names_set.add(ind_name)
-                                    names_to_add_set.add(ind_name)
-                        except Exception as e:
-                            logger.warning(f"Failed to read indicator file {ind_filename} during reverse lookup: {e}")
-
-        # 3. If catalog configuration files were modified, rebuild all collections listed in those configs
+        # Rule 3: If catalog config files were modified, rebuild all items listed in catalog config
         if catalog_files:
-            catalogs_dir = os.path.join(workspace_path, "catalogs")
-            if os.path.exists(catalogs_dir):
-                for cat_filename in os.listdir(catalogs_dir):
-                    if cat_filename.endswith((".json", ".yaml", ".yml")):
-                        cat_path = os.path.join(catalogs_dir, cat_filename)
-                        try:
-                            with open(cat_path, 'r') as fh:
-                                if cat_filename.endswith('.json'):
-                                    cat_data = json.load(fh)
-                                else:
-                                    cat_data = yaml.safe_load(fh)
-                            if isinstance(cat_data, dict) and "collections" in cat_data:
-                                for c in cat_data["collections"]:
-                                    modified_names_set.add(c)
-                                    names_to_add_set.add(c)
-                        except Exception as e:
-                            logger.warning(f"Failed to read catalog file {cat_filename}: {e}")
+            for c in catalog_defined_collections:
+                modified_names_set.add(c)
+                names_to_add_set.add(c)
 
         return list(modified_names_set), list(names_to_add_set)
 
