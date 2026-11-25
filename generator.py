@@ -1,7 +1,10 @@
 import os
 import shutil
 import json
-import yaml
+try:
+    import yaml
+except ImportError:
+    yaml = None
 from git import Repo
 import subprocess
 import logging
@@ -29,6 +32,92 @@ class CatalogGenerator:
             if key not in self._locks:
                 self._locks[key] = threading.Lock()
             return self._locks[key]
+
+    def resolve_modified_names(self, workspace_path: str, pr_files: list[str]) -> tuple[list[str], list[str]]:
+        """
+        Determines the list of collection/indicator names to generate (modified_names)
+        and names to inject into catalog configs (names_to_add) based on PR file changes.
+        """
+        pr_files = pr_files or []
+        existing_pr_files = [f for f in pr_files if os.path.exists(os.path.join(workspace_path, f))]
+
+        collections_files = [f for f in existing_pr_files if f.startswith("collections/")]
+        indicator_files = [f for f in existing_pr_files if f.startswith("indicators/")]
+        catalog_files = [f for f in existing_pr_files if f.startswith("catalogs/")]
+
+        modified_names_set = set()
+        names_to_add_set = set()
+
+        # 1. Process modified indicator files
+        for f in indicator_files:
+            name, ext = os.path.splitext(os.path.basename(f))
+            modified_names_set.add(name)
+            names_to_add_set.add(name)
+
+            file_path = os.path.join(workspace_path, f)
+            try:
+                with open(file_path, 'r') as fh:
+                    if ext.lower() == '.json':
+                        data = json.load(fh)
+                    else:
+                        data = yaml.safe_load(fh)
+                if isinstance(data, dict) and "Collections" in data:
+                    for c in data["Collections"]:
+                        modified_names_set.add(c)
+                        names_to_add_set.add(c)
+            except Exception as e:
+                logger.warning(f"Failed to read indicator file {f}: {e}")
+
+        # 2. Process modified collection files
+        modified_collections = set()
+        for f in collections_files:
+            name = os.path.splitext(os.path.basename(f))[0]
+            modified_names_set.add(name)
+            names_to_add_set.add(name)
+            modified_collections.add(name)
+
+        # Reverse lookup: if collection files were modified, scan all indicators to find parent indicators
+        if modified_collections:
+            indicators_dir = os.path.join(workspace_path, "indicators")
+            if os.path.exists(indicators_dir):
+                for ind_filename in os.listdir(indicators_dir):
+                    if ind_filename.endswith((".json", ".yaml", ".yml")):
+                        ind_path = os.path.join(indicators_dir, ind_filename)
+                        try:
+                            with open(ind_path, 'r') as fh:
+                                if ind_filename.endswith('.json'):
+                                    ind_data = json.load(fh)
+                                else:
+                                    ind_data = yaml.safe_load(fh)
+                            if isinstance(ind_data, dict) and "Collections" in ind_data:
+                                if any(c in modified_collections for c in ind_data["Collections"]):
+                                    ind_name = os.path.splitext(ind_filename)[0]
+                                    modified_names_set.add(ind_name)
+                                    names_to_add_set.add(ind_name)
+                        except Exception as e:
+                            logger.warning(f"Failed to read indicator file {ind_filename} during reverse lookup: {e}")
+
+        # 3. If catalog configuration files were modified, rebuild all collections listed in those configs
+        if catalog_files:
+            catalogs_dir = os.path.join(workspace_path, "catalogs")
+            if os.path.exists(catalogs_dir):
+                for cat_filename in os.listdir(catalogs_dir):
+                    if cat_filename.endswith((".json", ".yaml", ".yml")):
+                        cat_path = os.path.join(catalogs_dir, cat_filename)
+                        try:
+                            with open(cat_path, 'r') as fh:
+                                if cat_filename.endswith('.json'):
+                                    cat_data = json.load(fh)
+                                else:
+                                    cat_data = yaml.safe_load(fh)
+                            if isinstance(cat_data, dict) and "collections" in cat_data:
+                                for c in cat_data["collections"]:
+                                    modified_names_set.add(c)
+                                    names_to_add_set.add(c)
+                        except Exception as e:
+                            logger.warning(f"Failed to read catalog file {cat_filename}: {e}")
+
+        return list(modified_names_set), list(names_to_add_set)
 
     def get_workspace_path(self, owner: str, repo: str, pull_number: int) -> str:
         return os.path.join(self.cache_dir, f"{owner}_{repo}_pr{pull_number}")
@@ -88,45 +177,7 @@ class CatalogGenerator:
             repo_obj.git.checkout(sha, force=True)
 
             # Process modified files for injection and command arguments
-            pr_files = pr_files or []
-            existing_pr_files = [f for f in pr_files if os.path.exists(os.path.join(workspace_path, f))]
-            
-            collections_files = [f for f in existing_pr_files if f.startswith("collections/")]
-            indicator_files = [f for f in existing_pr_files if f.startswith("indicators/")]
-            
-            collections_in_indicators = set()
-            modified_names_set = set()
-
-            for f in indicator_files:
-                name, ext = os.path.splitext(os.path.basename(f))
-                modified_names_set.add(name)
-                
-                file_path = os.path.join(workspace_path, f)
-                try:
-                    with open(file_path, 'r') as fh:
-                        if ext.lower() == '.json':
-                            data = json.load(fh)
-                        else:
-                            data = yaml.safe_load(fh)
-                    if isinstance(data, dict) and "Collections" in data:
-                        for c in data["Collections"]:
-                            collections_in_indicators.add(c)
-                except Exception as e:
-                    logger.warning(f"Failed to read indicator file {f}: {e}")
-
-            names_to_add = []
-            for f in collections_files:
-                name = os.path.splitext(os.path.basename(f))[0]
-                modified_names_set.add(name)
-                if name not in collections_in_indicators and name not in names_to_add:
-                    names_to_add.append(name)
-
-            for f in indicator_files:
-                name = os.path.splitext(os.path.basename(f))[0]
-                if name not in names_to_add:
-                    names_to_add.append(name)
-
-            modified_names = list(modified_names_set)
+            modified_names, names_to_add = self.resolve_modified_names(workspace_path, pr_files)
 
             logger.info(f"CLI arguments (modified_names): {modified_names}")
             logger.info(f"Keys to inject into catalog config: {names_to_add}")
